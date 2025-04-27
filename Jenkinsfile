@@ -74,11 +74,13 @@ pipeline {
 
         stage('Verify Deployment') {
             steps {
-                echo 'Verifying the deployment on EKS'
-                sh '''
-                    kubectl get pods
-                    kubectl get svc
-                '''
+                withCredentials([aws(credentialsId: 'aws-credentials', region: AWS_REGION)]) {
+                    echo 'Verifying the deployment on EKS'
+                    sh '''
+                        kubectl get pods
+                        kubectl get svc
+                    '''
+                }
             }
         }
     }
