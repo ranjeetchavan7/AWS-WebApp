@@ -1,11 +1,17 @@
 pipeline {
     agent any
+
     environment {
-        AWS_REGION = 'ap-south-1' // Change to your AWS region
-        ECR_REPO = '209479288689.dkr.ecr.ap-south-1.amazonaws.com/my-repo' // Your ECR repository URL
-        IMAGE_TAG = 'latest' // Tag for the image
+        AWS_REGION = 'ap-south-1' // Set your AWS region here
     }
+
     stages {
+        stage('Declarative: Checkout SCM') {
+            steps {
+                checkout scm
+            }
+        }
+
         stage('Checkout') {
             steps {
                 echo 'Checking out code from Git repository'
@@ -31,31 +37,31 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                echo "Building Docker image: ${ECR_REPO}:${IMAGE_TAG}"
+                echo 'Building Docker image: 209479288689.dkr.ecr.ap-south-1.amazonaws.com/my-repo:latest'
                 sh 'docker build -f Dockerfile -t my-repo .'
-                sh "docker tag my-repo ${ECR_REPO}:${IMAGE_TAG}"
+                sh 'docker tag my-repo 209479288689.dkr.ecr.ap-south-1.amazonaws.com/my-repo:latest'
             }
         }
 
         stage('Push Docker Image to ECR') {
             steps {
-                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-credentials', region: "${AWS_REGION}"]]) {
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-credentials']]) {
                     echo 'Logging into AWS ECR'
-                    sh "aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPO}"
+                    sh 'aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin 209479288689.dkr.ecr.ap-south-1.amazonaws.com'
                     echo 'Pushing Docker image to ECR'
-                    sh "docker push ${ECR_REPO}:${IMAGE_TAG}"
+                    sh 'docker push 209479288689.dkr.ecr.ap-south-1.amazonaws.com/my-repo:latest'
                 }
             }
         }
 
         stage('Deploy to EKS') {
             steps {
-                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-credentials', region: "${AWS_REGION}"]]) {
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-credentials']]) {
                     echo 'Configuring kubectl for EKS'
-                    sh 'aws eks update-kubeconfig --region ${AWS_REGION} --name your-cluster-name' // Update with your EKS cluster name
-                    echo 'Deploying to EKS'
-                    sh 'kubectl apply -f deployment.yaml'
-                    sh 'kubectl apply -f service.yaml'
+                    sh 'aws eks update-kubeconfig --region ${AWS_REGION} --name my-cluster'
+                    echo 'Deploying application to EKS cluster'
+                    // Add your kubectl deployment command here, e.g.
+                    // sh 'kubectl apply -f deployment.yaml'
                 }
             }
         }
@@ -63,19 +69,18 @@ pipeline {
         stage('Verify Deployment') {
             steps {
                 echo 'Verifying deployment'
-                sh 'kubectl get pods'
-                sh 'kubectl get svc'
+                // Add verification steps here, e.g., checking pod status
+                // sh 'kubectl get pods'
             }
         }
     }
+
     post {
         always {
             echo 'Cleaning up'
-            // Any cleanup actions (e.g., removing Docker images, clearing caches)
+            // Add any cleanup steps here if needed
         }
-        success {
-            echo 'Deployment successful!'
-        }
+
         failure {
             echo 'Deployment failed!'
         }
