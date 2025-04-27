@@ -23,10 +23,11 @@ pipeline {
                     . venv/bin/activate
                     pip install -r requirements.txt
                 '''
+
                 echo 'Running tests for webapp'
                 script {
                     if (fileExists('tests')) {
-                        sh 'pytest tests'
+                        sh 'pytest tests/'
                     } else {
                         echo 'No tests directory found. Skipping tests.'
                     }
@@ -36,7 +37,7 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                echo "Building Docker image: ${ECR_REPO}:${IMAGE_TAG}"
+                echo 'Building Docker image: ${ECR_REPO}:${IMAGE_TAG}'
                 sh '''
                     docker build -f Dockerfile -t my-repo .
                     docker tag my-repo ${ECR_REPO}:${IMAGE_TAG}
@@ -46,7 +47,7 @@ pipeline {
 
         stage('Push Docker Image to ECR') {
             steps {
-                withCredentials([aws(credentialsId: 'aws-credentials', region: AWS_REGION)]) {
+                withCredentials([aws(credentialsId: 'aws-credentials-id', region: "${AWS_REGION}")]) {
                     echo 'Logging into ECR'
                     sh '''
                         aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPO}
@@ -58,13 +59,17 @@ pipeline {
 
         stage('Deploy to EKS') {
             steps {
-                withCredentials([aws(credentialsId: 'aws-credentials', region: AWS_REGION)]) {
+                withCredentials([aws(credentialsId: 'aws-credentials-id', region: "${AWS_REGION}")]) {
                     echo 'Updating kubeconfig to access EKS cluster'
                     sh '''
                         aws eks --region ${AWS_REGION} update-kubeconfig --name my-cluster
                     '''
+                    
                     echo 'Deploying Docker image to EKS'
                     sh '''
+                        # Replace the image URL in the deployment.yaml file with the correct ECR image URL
+                        sed -i 's|<ACR_NAME>.azurecr.io/webapp:latest|${ECR_REPO}:${IMAGE_TAG}|g' k8s/deployment.yaml
+
                         kubectl apply -f k8s/deployment.yaml
                         kubectl apply -f k8s/service.yaml
                     '''
@@ -74,23 +79,21 @@ pipeline {
 
         stage('Verify Deployment') {
             steps {
-                withCredentials([aws(credentialsId: 'aws-credentials', region: AWS_REGION)]) {
-                    echo 'Verifying the deployment on EKS'
-                    sh '''
-                        kubectl get pods
-                        kubectl get svc
-                    '''
-                }
+                echo 'Verifying the deployment on EKS'
+                sh '''
+                    kubectl get pods
+                    kubectl get svc webapp-service
+                '''
             }
         }
     }
 
     post {
+        success {
+            echo 'Pipeline succeeded!'
+        }
         failure {
             echo 'Pipeline failed.'
-        }
-        success {
-            echo 'Pipeline completed successfully.'
         }
     }
 }
