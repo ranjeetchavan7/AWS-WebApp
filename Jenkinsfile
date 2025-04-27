@@ -38,9 +38,13 @@ pipeline {
             steps {
                 withCredentials([aws(credentialsId: 'aws-credentials', region: 'ap-south-1')]) {
                     echo 'Configuring kubectl for EKS'
-                    sh "aws eks update-kubeconfig --region ${AWS_DEFAULT_REGION} --name ${CLUSTER_NAME}"
-
-                    // Apply Kubernetes deployment and service files from 'k8s' directory
+                    // Set AWS environment variables explicitly
+                    sh '''
+                    export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+                    export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+                    export AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+                    aws eks update-kubeconfig --region ${AWS_DEFAULT_REGION} --name ${CLUSTER_NAME}
+                    '''
                     echo 'Applying Kubernetes deployment and service files'
                     sh 'kubectl apply -f k8s/deployment.yaml'
                     sh 'kubectl apply -f k8s/service.yaml'
