@@ -15,6 +15,6 @@ spec:
     spec:
       containers:
       - name: webapp
-        image: 209479288689.dkr.ecr.ap-south-1.amazonaws.com/my-repo:1  # Update this with your ECR image URL
+        image: 209479288689.dkr.ecr.ap-south-1.amazonaws.com/my-repo:latest  # Update this with your ECR image URL
         ports:
         - containerPort: 5000
