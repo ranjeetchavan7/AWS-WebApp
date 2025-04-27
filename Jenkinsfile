@@ -2,17 +2,16 @@ pipeline {
     agent any
 
     environment {
-        AWS_ACCOUNT_ID = '209479288689'
         AWS_DEFAULT_REGION = 'ap-south-1'
-        ECR_REPOSITORY = 'my-repo'  // Updated ECR repo name
+        ECR_REPO = 'my-repo'
         IMAGE_TAG = '1'
-        GIT_REPO = 'https://github.com/ranjeetchavan7/AWS-WebApp.git'  // Updated Git repo URL
+        ECR_URI = "209479288689.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${ECR_REPO}:${IMAGE_TAG}"
     }
 
     stages {
         stage('Checkout') {
             steps {
-                git credentialsId: 'github-ssh', url: GIT_REPO, branch: 'main'
+                checkout scm
             }
         }
 
@@ -20,18 +19,13 @@ pipeline {
             steps {
                 script {
                     echo 'Setting up virtual environment and installing dependencies for webapp'
-                    sh '''
-                        python3 -m venv venv
-                        . venv/bin/activate
-                        python3 -m pip install -r requirements.txt
-                    '''
+                    sh 'python3 -m venv venv'
+                    sh '. venv/bin/activate && pip install -r requirements.txt'
                     
                     echo 'Running tests for webapp'
+                    // Add test commands if any, for now it will skip if no tests are found
                     if (fileExists('tests')) {
-                        sh '''
-                            . venv/bin/activate
-                            pytest tests
-                        '''
+                        sh 'pytest tests'
                     } else {
                         echo 'No tests directory found. Skipping tests.'
                     }
@@ -42,9 +36,9 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    echo "Building Docker image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}"
-                    sh "docker build -f Dockerfile -t ${ECR_REPOSITORY} ."
-                    sh "docker tag ${ECR_REPOSITORY} ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}"
+                    echo "Building Docker image: ${ECR_URI}"
+                    sh 'docker build -f Dockerfile -t my-repo .'
+                    sh "docker tag my-repo ${ECR_URI}"
                 }
             }
         }
@@ -53,13 +47,11 @@ pipeline {
             steps {
                 withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-credentials']]) {
                     script {
-                        echo 'Logging into Amazon ECR'
-                        sh '''
-                            aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com
-                        '''
-
-                        echo "Pushing Docker image to ECR: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}"
-                        sh "docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}"
+                        // Login to ECR
+                        sh "aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin 209479288689.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
+                        
+                        // Push image to ECR
+                        sh "docker push ${ECR_URI}"
                     }
                 }
             }
@@ -67,9 +59,18 @@ pipeline {
 
         stage('Deploy to EKS') {
             steps {
-                script {
-                    echo 'Deploying application to EKS cluster...'
-                    // Add your kubectl apply or Helm deployment commands here
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-credentials']]) {
+                    script {
+                        // Set Kubernetes credentials using AWS EKS
+                        sh 'aws eks --region ap-south-1 update-kubeconfig --name my-cluster'
+                        
+                        // Deploy Docker image to EKS
+                        echo 'Deploying Docker image to EKS'
+                        sh '''
+                        kubectl apply -f kubernetes/deployment.yaml
+                        kubectl set image deployment/my-deployment my-container=209479288689.dkr.ecr.ap-south-1.amazonaws.com/my-repo:1
+                        '''
+                    }
                 }
             }
         }
@@ -77,19 +78,22 @@ pipeline {
         stage('Verify Deployment') {
             steps {
                 script {
-                    echo 'Verifying the deployment on EKS cluster...'
-                    // Add your kubectl get pods/service verification commands here
+                    echo 'Verifying the deployment on EKS'
+                    sh '''
+                    kubectl rollout status deployment/my-deployment
+                    kubectl get pods
+                    '''
                 }
             }
         }
     }
 
     post {
-        always {
-            echo 'Pipeline completed for AWS-WebApp.'
+        success {
+            echo 'Pipeline completed successfully!'
         }
         failure {
-            echo 'Pipeline failed for AWS-WebApp :('
+            echo 'Pipeline failed.'
         }
     }
 }
